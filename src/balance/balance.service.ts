@@ -106,14 +106,16 @@ export class BalanceService {
     employeeId: string,
     locationId: string,
     leaveType: string,
+    manager?: any,
   ): Promise<number> {
-    const balance = await this.balanceRepo.findOne({
+    const repo = manager ? manager.getRepository(LeaveBalance) : this.balanceRepo;
+    const balance = await repo.findOne({
       where: { employeeId, locationId, leaveType },
     });
 
     if (!balance) return 0;
 
-    const pendingDays = await this.getPendingDays(employeeId, locationId, leaveType);
+    const pendingDays = await this.getPendingDays(employeeId, locationId, leaveType, manager);
     return Number(balance.balanceDays) - pendingDays;
   }
 
@@ -121,8 +123,10 @@ export class BalanceService {
     employeeId: string,
     locationId: string,
     leaveType: string,
+    manager?: any,
   ): Promise<number> {
-    const result = await this.requestRepo
+    const repo = manager ? manager.getRepository(TimeOffRequest) : this.requestRepo;
+    const result = await repo
       .createQueryBuilder('r')
       .select('COALESCE(SUM(r.days_requested), 0)', 'total')
       .where('r.employee_id = :employeeId', { employeeId })
@@ -143,8 +147,10 @@ export class BalanceService {
     balanceDays: number,
     changeSource: ChangeSource,
     referenceId?: string,
+    manager?: any,
   ): Promise<LeaveBalance> {
-    let balance = await this.balanceRepo.findOne({
+    const repo = manager ? manager.getRepository(LeaveBalance) : this.balanceRepo;
+    let balance = await repo.findOne({
       where: { employeeId, locationId, leaveType },
     });
 
@@ -163,7 +169,7 @@ export class BalanceService {
       });
     }
 
-    const saved = await this.balanceRepo.save(balance);
+    const saved = await repo.save(balance);
 
     // Write audit log
     await this.auditService.log({
@@ -174,7 +180,7 @@ export class BalanceService {
       newBalance: balanceDays,
       changeSource,
       referenceId,
-    });
+    }, manager);
 
     return saved;
   }

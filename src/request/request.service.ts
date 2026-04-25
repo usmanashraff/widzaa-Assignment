@@ -377,8 +377,10 @@ export class RequestService {
     employeeId: string,
     locationId: string,
     leaveType: string,
+    manager?: any,
   ): Promise<number> {
-    const pendingRequests = await this.requestRepo.find({
+    const repo = manager ? manager.getRepository(TimeOffRequest) : this.requestRepo;
+    const pendingRequests = await repo.find({
       where: {
         employeeId,
         locationId,
@@ -394,6 +396,7 @@ export class RequestService {
       employeeId,
       locationId,
       leaveType,
+      manager,
     );
 
     // Calculate cumulative pending days to find which requests are now invalid
@@ -413,7 +416,7 @@ export class RequestService {
       if (runningBalance < 0) {
         request.status = RequestStatus.PENDING_REVIEW;
         request.rejectionReason = 'Balance reduced by sync. Please re-review.';
-        await this.requestRepo.save(request);
+        await repo.save(request);
         flaggedCount++;
       }
     }

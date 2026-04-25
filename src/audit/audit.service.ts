@@ -11,17 +11,10 @@ export class AuditService {
     private auditRepo: Repository<BalanceAuditLog>,
   ) {}
 
-  async log(params: {
-    employeeId: string;
-    locationId: string;
-    leaveType: string;
-    previousBalance: number;
-    newBalance: number;
-    changeSource: ChangeSource;
-    referenceId?: string;
-  }): Promise<BalanceAuditLog> {
-    const entry = this.auditRepo.create(params);
-    return this.auditRepo.save(entry);
+  async log(params: Partial<BalanceAuditLog> & { changeSource: ChangeSource }, manager?: any): Promise<BalanceAuditLog> {
+    const repo = manager ? manager.getRepository(BalanceAuditLog) : this.auditRepo;
+    const logEntry = repo.create(params);
+    return repo.save(logEntry);
   }
 
   async findByEmployee(employeeId: string): Promise<BalanceAuditLog[]> {

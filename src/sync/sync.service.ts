@@ -20,57 +20,73 @@ export class SyncService {
   ) {}
 
   async batchSync(dto: BatchSyncDto): Promise<any> {
-    let flaggedRequests = 0;
-    const uniqueCombos = new Set<string>();
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    // Count existing before upsert for created/updated stats
-    let existingBefore = 0;
-    for (const item of dto.balances) {
-      const existing = await this.dataSource.manager.findOne(LeaveBalance, {
-        where: {
-          employeeId: item.employeeId,
-          locationId: item.locationId,
-          leaveType: item.leaveType,
-        },
-      });
-      if (existing) existingBefore++;
-    }
+    try {
+      let flaggedRequests = 0;
+      const uniqueCombos = new Set<string>();
 
-    // Upsert all balances
-    for (const item of dto.balances) {
-      await this.balanceService.upsertBalance(
-        item.employeeId,
-        item.locationId,
-        item.leaveType,
-        item.balanceDays,
-        ChangeSource.HCM_BATCH,
-        'batch-sync',
+      // Count existing before upsert for created/updated stats
+      let existingBefore = 0;
+      for (const item of dto.balances) {
+        const existing = await queryRunner.manager.findOne(LeaveBalance, {
+          where: {
+            employeeId: item.employeeId,
+            locationId: item.locationId,
+            leaveType: item.leaveType,
+          },
+        });
+        if (existing) existingBefore++;
+      }
+
+      // Upsert all balances
+      for (const item of dto.balances) {
+        await this.balanceService.upsertBalance(
+          item.employeeId,
+          item.locationId,
+          item.leaveType,
+          item.balanceDays,
+          ChangeSource.HCM_BATCH,
+          'batch-sync',
+          queryRunner.manager,
+        );
+        uniqueCombos.add(`${item.employeeId}|${item.locationId}|${item.leaveType}`);
+      }
+
+      // Check PENDING requests for each affected combo
+      for (const combo of uniqueCombos) {
+        const [employeeId, locationId, leaveType] = combo.split('|');
+        const flagged = await this.requestService.flagInvalidPendingRequests(
+          employeeId,
+          locationId,
+          leaveType,
+          queryRunner.manager,
+        );
+        flaggedRequests += flagged;
+      }
+
+      const created = dto.balances.length - existingBefore;
+      const updated = existingBefore;
+
+      this.lastBatchSyncAt = new Date();
+      this.lastBatchRecordCount = dto.balances.length;
+
+      await queryRunner.commitTransaction();
+
+      this.logger.log(
+        `Batch sync complete: ${created} created, ${updated} updated, ${flaggedRequests} requests flagged`,
       );
-      uniqueCombos.add(`${item.employeeId}|${item.locationId}|${item.leaveType}`);
+
+      return { processed: dto.balances.length, created, updated, flaggedRequests };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      this.logger.error(`Batch sync failed: ${error.message}`);
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
-
-    // Check PENDING requests for each affected combo
-    for (const combo of uniqueCombos) {
-      const [employeeId, locationId, leaveType] = combo.split('|');
-      const flagged = await this.requestService.flagInvalidPendingRequests(
-        employeeId,
-        locationId,
-        leaveType,
-      );
-      flaggedRequests += flagged;
-    }
-
-    const created = dto.balances.length - existingBefore;
-    const updated = existingBefore;
-
-    this.lastBatchSyncAt = new Date();
-    this.lastBatchRecordCount = dto.balances.length;
-
-    this.logger.log(
-      `Batch sync complete: ${created} created, ${updated} updated, ${flaggedRequests} requests flagged`,
-    );
-
-    return { processed: dto.balances.length, created, updated, flaggedRequests };
   }
 
   async realtimeSync(dto: RealtimeSyncDto): Promise<any> {
