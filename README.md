@@ -88,7 +88,7 @@ npm run test:e2e
 
 For a full breakdown of the system design, core workflows, sync strategy, and concurrency handling, please see the included **Technical Requirements Document (TRD)** located at:
 
-`../TRD_TimeOff_Microservice.md` (root folder)
+`./TRD_TimeOff_Microservice.md`
 
 Key highlights:
 - **Optimistic Locking**: Used on the `time_off_request` table to prevent race conditions during concurrent manager approvals.
